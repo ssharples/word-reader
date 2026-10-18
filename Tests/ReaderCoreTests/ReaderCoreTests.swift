@@ -104,12 +104,16 @@ import Testing
             "OEBPS/Text/notes.xhtml": "<html><body><p>Notes are not read.</p></body></html>",
             "OEBPS/Images/cover.jpg": "not really a jpeg",
         ]
+        try write(files, to: root)
+        return root
+    }
+
+    static func write(_ files: [String: String], to root: URL) throws {
         for (path, contents) in files {
             let url = root.appending(path: path)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data(contents.utf8).write(to: url)
         }
-        return root
     }
 
     /// Zips the folder the way EPUBs are packed: mimetype first and stored, the rest deflated.
@@ -149,6 +153,54 @@ import Testing
             #expect(text.isChapterStart(7))
             #expect(text.chapterIndex(at: 8) == 2)
         }
+    }
+
+    /// Calibre's PDF conversions name the book by ISBN, list "Unknown" as the author
+    /// and mark no cover, but the first page has the real details.
+    @Test func takesMissingDetailsFromTheFirstPage() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "word-reader-tests-\(UUID().uuidString)/9781401945015.epub", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        try Self.write([
+            "META-INF/container.xml": """
+            <container><rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>
+            """,
+            "content.opf": """
+            <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:creator>Unknown</dc:creator><dc:title>9781401945015</dc:title>
+              </metadata>
+              <manifest>
+                <item href="index_split_000.html" id="page" media-type="application/xhtml+xml"/>
+                <item href="index-1_1.jpg" id="id6" media-type="image/jpeg"/>
+                <item href="index-2_1.jpg" id="id7" media-type="image/jpeg"/>
+              </manifest>
+              <spine><itemref idref="page"/></spine>
+            </package>
+            """,
+            "index_split_000.html": """
+            <html><head><title>Letting Go: The Pathway of Surrender</title><meta name="author" content="David R. Hawkins"/></head>
+            <body><p><a id="p1"></a><img src="index-1_1.jpg"/></p><p><img src="index-2_1.jpg"/></p><p>ALSO BY DAVID R. HAWKINS</p></body></html>
+            """,
+            "index-1_1.jpg": "cover",
+            "index-2_1.jpg": "page two",
+        ], to: root)
+
+        let package = try EPUBPackage.open(root)
+        #expect(package.title == "Letting Go: The Pathway of Surrender")
+        #expect(package.authors == ["David R. Hawkins"])
+        #expect(package.coverPath == "index-1_1.jpg")
+    }
+
+    @Test func ignoresPicturesAfterTheTextStarts() {
+        let page = Data("""
+        <html><head><title>Cover</title></head><body><h1>Chapter One</h1>
+        <p>It was a dark and stormy night, and the rain fell in torrents.</p><img src="../Images/logo.png"/></body></html>
+        """.utf8)
+        let details = EPUBPackage.firstPageDetails(page, base: "OEBPS/Text")
+        #expect(details.title == nil)
+        #expect(details.author == nil)
+        #expect(details.image == nil)
     }
 
     @Test func skipsFrontMatterWhenThereIsNoStartMarker() {

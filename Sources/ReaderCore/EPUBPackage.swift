@@ -128,15 +128,30 @@ public struct EPUBPackage: Sendable {
         }
 
         let images = manifest.values.filter { $0.mediaType.hasPrefix("image/") }
-        let cover = manifest.values.first { $0.properties.contains("cover-image") }
+        var coverPath = (manifest.values.first { $0.properties.contains("cover-image") }
             ?? coverID.flatMap { manifest[$0] }.flatMap { $0.mediaType.hasPrefix("image/") ? $0 : nil }
-            ?? images.first { $0.path.lowercased().contains("cover") }
+            ?? images.first { $0.path.lowercased().contains("cover") })?.path
+        authors.removeAll { isPlaceholderName($0) }
+
+        // Books converted from PDFs can name themselves by ISBN, give "Unknown" as the
+        // author and mark no cover. Their first page usually has all three.
+        let titleIsName = title?.contains(where: \.isLetter) ?? false
+        if !titleIsName || authors.isEmpty || coverPath == nil,
+           let first = spine.lazy.compactMap({ manifest[$0.idref] }).first(where: { isText($0.mediaType) }),
+           let page = try? storage.data(at: first.path) {
+            let details = firstPageDetails(page, base: EPUBPath.directory(of: first.path))
+            if !titleIsName, let pageTitle = details.title { title = pageTitle }
+            if authors.isEmpty, let author = details.author { authors = [author] }
+            if coverPath == nil, let image = details.image, images.contains(where: { $0.path == image }) {
+                coverPath = image
+            }
+        }
 
         return EPUBPackage(
             url: url,
             title: title,
             authors: Array(authors.prefix(3)),
-            coverPath: cover?.path,
+            coverPath: coverPath,
             isProtected: detectProtection(storage),
             storage: storage,
             packagePath: packagePath,
@@ -146,6 +161,56 @@ public struct EPUBPackage: Sendable {
             ncxPath: (tocID.flatMap { manifest[$0] } ?? manifest.values.first { $0.mediaType == "application/x-dtbncx+xml" })?.path,
             guideStart: guideStart
         )
+    }
+
+    /// The `<title>`, author and opening picture of a book's first page. The picture
+    /// only counts if it comes before any real text, as a cover does.
+    static func firstPageDetails(_ data: Data, base: String) -> (title: String?, author: String?, image: String?) {
+        var title: String?
+        var author: String?
+        var image: String?
+        var inHead = true
+        var inTitle = false
+        var buffer = ""
+        var wordsBeforeImage = 0
+        MarkupScanner.scan(data) { event in
+            switch event {
+            case .text(let text):
+                if inTitle { buffer += text }
+                else if !inHead, image == nil { wordsBeforeImage += text.split(whereSeparator: \.isWhitespace).count }
+            case .tag(let tag):
+                switch tag.name {
+                case "body":
+                    inHead = false
+                case "title" where inHead && !tag.isSelfClosing:
+                    if tag.isClosing {
+                        let value = TextExtractor.collapseSpaces(buffer)
+                        if title == nil, value.contains(where: \.isLetter), !isPlaceholderName(value), !isFrontMatter(value) {
+                            title = value
+                        }
+                    } else {
+                        buffer = ""
+                    }
+                    inTitle = !tag.isClosing
+                case "meta" where tag.attributes["name"]?.lowercased() == "author":
+                    let value = TextExtractor.collapseSpaces(tag.attributes["content"] ?? "")
+                    if author == nil, !value.isEmpty, !isPlaceholderName(value) { author = value }
+                case "img", "image":
+                    if image == nil, !tag.isClosing, !inHead, wordsBeforeImage < 10,
+                       let source = tag.attributes["src"] ?? tag.attributes["xlink:href"] ?? tag.attributes["href"] {
+                        image = EPUBPath.resolve(source, from: base)
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        return (title, author, image)
+    }
+
+    /// Names that tools fill in when they don't know: "Unknown", "Unknown Author".
+    static func isPlaceholderName(_ name: String) -> Bool {
+        ["unknown", "unknown author", "untitled"].contains(simplified(name))
     }
 
     /// Store-bought books carry FairPlay (`sinf.xml`) or Adobe encryption over their text.

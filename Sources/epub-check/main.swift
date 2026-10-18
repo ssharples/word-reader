@@ -35,6 +35,7 @@ for url in books {
         let ms = Int(Date().timeIntervalSince(clock) * 1000)
         print("OK   \(package.displayTitle) — \(text.count) words, \(text.chapters.count) chapters, \(ms) ms")
         if showSample {
+            print("     by \(package.authors.isEmpty ? "(no author)" : package.authors.joined(separator: ", ")), cover: \(package.coverPath ?? "(none)")")
             let middle = text.count / 2
             let sample = text.words[middle..<min(text.count, middle + 40)].joined(separator: " ")
             print("     chapters: \(text.chapters.prefix(5).map(\.title).joined(separator: " | "))")
