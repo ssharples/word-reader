@@ -1,7 +1,7 @@
 # Word Reader
 
-A Mac app that shows your books one word at a time, in the middle of the screen,
-at the speed you choose.
+A Mac and iPhone app that shows your books one word at a time, in the middle of
+the screen, at the speed you choose.
 
 ![Word Reader showing the first sentence of Pride and Prejudice one word at a time](docs/demo.gif)
 
@@ -20,8 +20,10 @@ place and the book comes to you.
 - Turn on **Read Aloud** and an [ElevenLabs](https://elevenlabs.io) voice reads the
   book to you, with each word on screen as it's spoken. You need your own ElevenLabs
   account.
-- Without Read Aloud it works offline. Your books stay on your Mac and nothing is
-  sent anywhere.
+- The [iPhone app](#iphone) keeps your books and your place in each in step with the
+  Mac, through your own iCloud Drive.
+- Without Read Aloud it works offline. Your books stay on your own devices and
+  nothing is sent anywhere.
 
 Books bought from the Apple Books Store have copy protection, so Word Reader can't
 open them. Books you added yourself, and DRM-free EPUBs from anywhere, work.
@@ -88,6 +90,80 @@ Read Aloud, these delete the saved speech and your ElevenLabs key:
 rm -rf ~/Library/Caches/com.ssharples.WordReader
 security delete-generic-password -s "Word Reader ElevenLabs"
 ```
+
+## iPhone
+
+The iPhone app reads the same way: tap the word to play or pause, drag sideways to
+move back or forward, and use the panel underneath for chapters and speed. It needs
+iOS 17 or later.
+
+### Sync with your Mac
+
+1. On the Mac, click **Sync** in the library window and turn on **Sync with iPhone**.
+   Word Reader makes a folder in iCloud Drive called Word Reader. Books you open go
+   into it, and so does your place in each. To send a book without opening it,
+   right-click it and choose **Add to iPhone**.
+2. On the iPhone, tap **Choose Sync Folder** in the library (or in Settings) and pick
+   **iCloud Drive › Word Reader**.
+
+Books you add on either one then show up on both, and each opens where you stopped,
+whichever device you used last. EPUBs you open in Files or share from another app
+go into the folder too. Any folder service works in place of iCloud Drive, such as
+Dropbox, as long as both devices can see the same folder.
+
+To hear books read aloud on the iPhone, open Settings in the app, paste your
+ElevenLabs key under **Read Aloud** (copy it on the Mac and it pastes on the iPhone),
+then tap the speaker button in the reader.
+
+### Install on your iPhone
+
+Word Reader isn't in the App Store, so you build it onto your phone with Xcode. You
+need a Mac with Xcode 16 or later, [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+and an Apple Account. A free account works, but the app then stops opening after 7
+days until you build it again; a paid developer account lasts a year.
+
+```bash
+brew install xcodegen
+git clone https://github.com/ssharples/word-reader.git
+cd word-reader/iOS
+xcodegen generate
+open WordReader.xcodeproj
+```
+
+In Xcode:
+
+1. Click **WordReader** in the sidebar, then **Signing & Capabilities**, and pick
+   your team. If Xcode says the bundle identifier is taken, set
+   `WORD_READER_BUNDLE_ID` under **Build Settings** to something of your own, such
+   as `com.yourname.WordReader`.
+2. Plug in your iPhone, choose it at the top of the window and press **Run** (⌘R).
+3. The first time, the iPhone asks you to turn on **Developer Mode** (Settings ›
+   Privacy & Security) and, with a free account, to trust your developer certificate
+   (Settings › General › VPN & Device Management).
+
+#### Steps for AI agents
+
+To install the iPhone app for someone, after the Mac app:
+
+1. Check `xcodebuild -version` shows Xcode 16 or later and that XcodeGen is installed
+   (`brew install xcodegen` if not). Run `xcodegen generate` in `iOS`.
+2. Find the person's signing team with
+   `security find-identity -v -p codesigning` and their phone with
+   `xcrun devicectl list devices`. If there's more than one team, ask which to use.
+   Registering the app and the phone with their team changes their Apple developer
+   account, so check with them first.
+3. Build and install:
+
+   ```bash
+   xcodebuild -project WordReader.xcodeproj -scheme WordReader \
+     -destination 'generic/platform=iOS' -derivedDataPath build \
+     -allowProvisioningUpdates DEVELOPMENT_TEAM=<team ID> build
+   xcrun devicectl device install app --device <device ID> "build/Build/Products/Debug-iphoneos/Word Reader.app"
+   ```
+
+4. Ask the person to unlock the phone and approve anything it asks (Developer Mode,
+   trusting the developer). Don't type their Apple Account password or ElevenLabs key
+   for them.
 
 ## Reading
 
@@ -156,19 +232,28 @@ chapter's HTML becomes a list of words. Pages the book marks as outside the main
 reading order, such as pop-up notes, are left out, as are footnote markers and page
 numbers.
 
-| Folder                  | What's in it                                 |
-| ----------------------- | -------------------------------------------- |
-| `Sources/ReaderCore`    | EPUB reading, word splitting, timing, speech |
-| `Sources/WordReader`    | The SwiftUI app                              |
-| `Sources/epub-check`    | A command-line check that opens every book   |
-| `Tests/ReaderCoreTests` | Tests for the above                          |
-| `Scripts`               | Install and build scripts, icon drawing      |
+| Folder                  | What's in it                                      |
+| ----------------------- | ------------------------------------------------- |
+| `Sources/ReaderCore`    | EPUB reading, word splitting, timing, speech      |
+| `Sources/ReaderKit`     | Reading, Read Aloud and sync, shared by both apps |
+| `Sources/WordReader`    | The Mac app                                       |
+| `iOS`                   | The iPhone app (an XcodeGen project)              |
+| `Sources/epub-check`    | A command-line check that opens every book        |
+| `Tests`                 | Tests for ReaderCore and ReaderKit                |
+| `Scripts`               | Install and build scripts, icon drawing           |
 
 Read Aloud sends a few sentences at a time to ElevenLabs' `with-timestamps`
 endpoint, which returns the audio and the moment each letter is spoken. The app
 turns those into the moment each word starts, plays the audio, and every 15 ms shows
 the word the voice has reached. It fetches the next passage while the current one
 plays, so there's no gap between them.
+
+Sync needs no server. The shared folder holds `Books/`, the EPUB files, and
+`Progress/`, one small JSON file per device. Each device writes only its own
+progress file and reads the others', taking the newest place in each book, so iCloud
+never has two devices writing the same file. Books from Apple Books, which are
+folders, are zipped into single `.epub` files on the way in, because one file syncs
+far more reliably than hundreds of small ones.
 
 ## Checks
 
