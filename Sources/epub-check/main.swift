@@ -25,6 +25,7 @@ for target in targets {
 
 var failures = 0
 var totalWords = 0
+var keys: [String: [String]] = [:]
 let started = Date()
 for url in books {
     let clock = Date()
@@ -32,6 +33,7 @@ for url in books {
         let package = try EPUBPackage.open(url)
         let text = try package.loadText()
         totalWords += text.count
+        keys[BookInfo(package: package).key, default: []].append(url.lastPathComponent)
         let ms = Int(Date().timeIntervalSince(clock) * 1000)
         print("OK   \(package.displayTitle) — \(text.count) words, \(text.chapters.count) chapters, \(ms) ms")
         if showSample {
@@ -47,6 +49,10 @@ for url in books {
         failures += 1
         print("FAIL \(url.lastPathComponent): \(error.localizedDescription)")
     }
+}
+// Sync matches books between devices by key, so two books sharing one would mix up progress.
+for (key, names) in keys where names.count > 1 {
+    print("SAME KEY \(key): \(names.joined(separator: ", "))")
 }
 let seconds = Date().timeIntervalSince(started)
 print("\n\(books.count - failures) of \(books.count) books opened, \(totalWords) words, \(String(format: "%.1f", seconds)) s")

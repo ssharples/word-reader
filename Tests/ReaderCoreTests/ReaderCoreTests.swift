@@ -72,9 +72,11 @@ import Testing
             """,
             "OEBPS/content.opf": """
             <?xml version="1.0" encoding="UTF-8"?>
-            <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+            <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
               <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="isbn">9780000000002</dc:identifier>
                 <dc:title>A Small Book</dc:title><dc:creator>Ann Author</dc:creator>
+                <dc:identifier id="book-id">urn:uuid:5D1A0B7E-0000-4000-8000-000000000001</dc:identifier>
               </metadata>
               <manifest>
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -136,10 +138,16 @@ import Testing
         defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
         let zipped = try Self.zip(folder)
 
-        for url in [folder, zipped] {
+        let packed = folder.deletingLastPathComponent().appending(path: "Sample-packed.epub")
+        try ZipWriter.zip(folder: folder, to: packed)
+
+        for url in [folder, zipped, packed] {
             let package = try EPUBPackage.open(url)
             #expect(package.title == "A Small Book")
             #expect(package.authors == ["Ann Author"])
+            #expect(package.identifier == "urn:uuid:5D1A0B7E-0000-4000-8000-000000000001")
+            // Every copy of the book gets the same key, so progress follows it between devices.
+            #expect(BookInfo(package: package).key == "urn:uuid:5d1a0b7e-0000-4000-8000-000000000001|a small book|ann author")
             #expect(package.coverPath == "OEBPS/Images/cover.jpg")
             #expect(package.coverData() == Data("not really a jpeg".utf8))
 
@@ -153,6 +161,32 @@ import Testing
             #expect(text.isChapterStart(7))
             #expect(text.chapterIndex(at: 8) == 2)
         }
+    }
+
+    @Test func zipsFoldersTheWayEPUBsArePacked() throws {
+        let folder = try Self.makeFolderBook()
+        defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+        let long = String(repeating: "Words that repeat pack down well. ", count: 200)
+        try Self.write(["OEBPS/Text/long.xhtml": long, ".DS_Store": "junk"], to: folder)
+        let output = folder.deletingLastPathComponent().appending(path: "packed.epub")
+        try ZipWriter.zip(folder: folder, to: output)
+
+        let bytes = try Data(contentsOf: output)
+        // mimetype comes first, uncompressed, so readers can recognise the file.
+        #expect(bytes[30..<38] == Data("mimetype".utf8))
+        #expect(bytes[8] == 0)
+        #expect(bytes.count < long.utf8.count)
+
+        let archive = try ZipArchive(data: bytes)
+        #expect(!archive.contains(".DS_Store"))
+        #expect(try archive.data(for: "OEBPS/Text/long.xhtml") == Data(long.utf8))
+        #expect(try archive.data(for: "OEBPS/Text/chapter 1.xhtml") == Data(contentsOf: folder.appending(path: "OEBPS/Text/chapter 1.xhtml")))
+        #expect(ZipWriter.crc32(Data("123456789".utf8)) == 0xCBF4_3926)
+    }
+
+    @Test func keysFallBackToTheFileName() {
+        #expect(BookInfo.key(identifier: nil, title: nil, author: nil, fileName: "Some  Book.epub") == "file:some book.epub")
+        #expect(BookInfo.key(identifier: nil, title: "Title", author: "Ann  B", fileName: "x.epub") == "|title|ann b")
     }
 
     /// Calibre's PDF conversions name the book by ISBN, list "Unknown" as the author

@@ -6,9 +6,9 @@ import ReaderCore
 /// Reads the book aloud with ElevenLabs and reports which word is being spoken,
 /// so the word on screen always matches the voice.
 @MainActor @Observable
-final class Narrator {
+public final class Narrator {
     /// True while waiting for the voice to start.
-    private(set) var isLoading = false
+    public private(set) var isLoading = false
 
     @ObservationIgnored var onWord: (Int) -> Void = { _ in }
     @ObservationIgnored var onFinish: () -> Void = {}
@@ -29,12 +29,17 @@ final class Narrator {
         self.text = text
     }
 
-    func start(at index: Int) {
+    public func start(at index: Int) {
         stop()
+        #if os(iOS)
+        // Speak even with the ring switch on silent, the way audiobooks do.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         loop = Task { [weak self] in await self?.run(from: index) }
     }
 
-    func stop() {
+    public func stop() {
         loop?.cancel()
         loop = nil
         playing?.player.stop()
@@ -43,7 +48,7 @@ final class Narrator {
     }
 
     /// Jumps within the passage being spoken, or starts again from `index`.
-    func seek(to index: Int) {
+    public func seek(to index: Int) {
         guard loop != nil else { return }
         if let playing, playing.clip.passage.words.contains(index) {
             firstWord = index - playing.clip.passage.words.lowerBound
@@ -54,7 +59,7 @@ final class Narrator {
     }
 
     private func run(from index: Int) async {
-        guard let loader = VoiceSettings.loader() else {
+        guard let loader = ReadAloud.loader() else {
             onFailure(ElevenLabs.Failure.noKey)
             return
         }

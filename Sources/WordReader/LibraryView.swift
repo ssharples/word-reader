@@ -1,6 +1,7 @@
 import AppKit
 import ImageIO
 import ReaderCore
+import ReaderKit
 import SwiftUI
 
 struct LibraryView: View {
@@ -8,6 +9,7 @@ struct LibraryView: View {
     @State private var query = ""
     @State private var isDropTarget = false
     @State private var slowScan = false
+    @State private var showSync = false
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 24, alignment: .top)]
 
@@ -22,7 +24,7 @@ struct LibraryView: View {
     /// Books opened before, most recent first.
     private var recent: [BookInfo] {
         app.books
-            .compactMap { book in app.progress.progress(for: book.id).map { (book, $0.lastOpened) } }
+            .compactMap { book in app.progress.progress(for: book).map { (book, $0.lastOpened) } }
             .sorted { $0.1 > $1.1 }
             .prefix(6)
             .map(\.0)
@@ -59,6 +61,17 @@ struct LibraryView: View {
         .navigationSubtitle(app.books.isEmpty ? "" : "\(app.books.count) books")
         .searchable(text: $query, placement: .toolbar, prompt: "Title or author")
         .toolbar {
+            ToolbarItem {
+                Button {
+                    showSync.toggle()
+                } label: {
+                    Label("Sync", systemImage: app.sync.problem != nil ? "exclamationmark.icloud" : app.isSyncing ? "checkmark.icloud" : "icloud")
+                }
+                .help("Sync books and progress with iPhone")
+                .popover(isPresented: $showSync, arrowEdge: .bottom) {
+                    SyncSettings()
+                }
+            }
             ToolbarItem {
                 Button {
                     Task { await app.loadLibrary() }
@@ -137,7 +150,7 @@ struct BookCard: View {
     @State private var hovering = false
 
     var body: some View {
-        let progress = app.progress.progress(for: book.id)
+        let progress = app.progress.progress(for: book)
         Button {
             Task { await app.open(book) }
         } label: {
@@ -149,6 +162,16 @@ struct BookCard: View {
                                 Color.black.opacity(0.35)
                                 ProgressView().controlSize(.large)
                             }
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if app.isSyncing, app.syncedKeys.contains(book.key) {
+                            Image(systemName: "iphone")
+                                .font(.caption2.weight(.semibold))
+                                .frame(width: 22, height: 22)
+                                .background(.thickMaterial, in: Circle())
+                                .padding(6)
+                                .help("In the sync folder, so on your iPhone too")
                         }
                     }
                     .overlay(alignment: .topTrailing) {
@@ -199,6 +222,9 @@ struct BookCard: View {
                     Task { await app.open(book) }
                 }
             }
+            if app.isSyncing, !app.syncedKeys.contains(book.key), !book.isProtected {
+                Button("Add to iPhone") { Task { await app.addToSync(book) } }
+            }
             Divider()
             Button("Show in Finder") { app.showInFinder(book) }
         }
@@ -226,42 +252,6 @@ struct CoverView: View {
             .task(id: book.id) {
                 image = await CoverCache.shared.cover(for: book)
             }
-    }
-}
-
-/// A plain cover for books that don't come with one.
-struct PlaceholderCover: View {
-    let title: String
-    let author: String?
-
-    private var hue: Double {
-        let hash = title.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
-        return Double(hash % 360) / 360
-    }
-
-    var body: some View {
-        LinearGradient(
-            colors: [Color(hue: hue, saturation: 0.42, brightness: 0.58), Color(hue: hue, saturation: 0.55, brightness: 0.34)],
-            startPoint: .top, endPoint: .bottom
-        )
-        .overlay {
-            VStack(spacing: 8) {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold, design: .serif))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(5)
-                Spacer(minLength: 0)
-                if let author {
-                    Text(author)
-                        .font(.caption2)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(14)
-            .padding(.top, 10)
-            .foregroundStyle(.white.opacity(0.92))
-        }
     }
 }
 

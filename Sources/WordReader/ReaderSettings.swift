@@ -1,3 +1,4 @@
+import ReaderKit
 import SwiftUI
 
 struct ReaderSettings: View {

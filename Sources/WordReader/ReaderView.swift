@@ -1,5 +1,6 @@
 import AppKit
 import ReaderCore
+import ReaderKit
 import SwiftUI
 
 /// The reading screen: one word at a time, with controls that fade away while it plays.
@@ -161,91 +162,6 @@ struct ReaderView: View {
 
     private func changeFontSize(by delta: Double) {
         fontSize = min(max(fontSize + delta, Prefs.fontSizeRange.lowerBound), Prefs.fontSizeRange.upperBound)
-    }
-}
-
-/// The current word, with its focus letter fixed at the centre between two guide lines.
-struct WordStage: View {
-    let session: ReaderSession
-    let fontSize: Double
-    let font: ReaderFont
-    let showFocusLetter: Bool
-
-    var body: some View {
-        let lineHeight = fontSize * 1.35
-        GeometryReader { geometry in
-            let width = max(min(geometry.size.width - 64, 960), 200)
-            let parts = WordTiming.focusSplit(session.word)
-            let size = fittedSize(parts, halfWidth: width / 2)
-            VStack(spacing: fontSize * 0.2) {
-                Guide(tickBelow: true)
-                HStack(spacing: 0) {
-                    Text(parts.before)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    Text(parts.focus)
-                        .foregroundStyle(showFocusLetter ? Theme.focus : Theme.ink)
-                    Text(parts.after)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .font(.system(size: size, design: font.design))
-                .lineLimit(1)
-                .frame(height: lineHeight)
-                Guide(tickBelow: false)
-            }
-            .frame(width: width)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(height: lineHeight + fontSize * 0.4 + 24)
-        .accessibilityElement()
-        .accessibilityLabel(session.word)
-    }
-
-    /// Shrinks long words so both halves fit either side of the focus letter.
-    private func fittedSize(_ parts: (before: String, focus: String, after: String), halfWidth: Double) -> Double {
-        let measure = font.nsFont(size: fontSize)
-        func width(_ text: String) -> Double {
-            (text as NSString).size(withAttributes: [.font: measure]).width
-        }
-        let needed = max(width(parts.before), width(parts.after)) + width(parts.focus) / 2
-        guard needed > halfWidth - 8 else { return fontSize }
-        return max(16, fontSize * (halfWidth - 8) / needed)
-    }
-}
-
-/// A hairline with a small tick at the centre, pointing at the focus letter.
-struct Guide: View {
-    let tickBelow: Bool
-
-    var body: some View {
-        ZStack(alignment: tickBelow ? .top : .bottom) {
-            Rectangle().fill(Theme.guide).frame(height: 1)
-            Rectangle().fill(Theme.guide).frame(width: 2, height: 12)
-        }
-        .frame(height: 12)
-    }
-}
-
-/// While paused, the words around the current one, so you can find your place.
-struct PausedContext: View {
-    let session: ReaderSession
-    let font: ReaderFont
-
-    var body: some View {
-        if !session.isPlaying {
-            let context = session.context(radius: 24)
-            (Text(context.before)
-                + Text(context.before.isEmpty ? "" : " ")
-                + Text(context.word).foregroundStyle(Theme.focus).fontWeight(.semibold)
-                + Text(context.after.isEmpty ? "" : " ")
-                + Text(context.after))
-                .font(.system(size: 16, design: font.design))
-                .foregroundStyle(.secondary)
-                .lineSpacing(5)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 640)
-                .padding(.horizontal, 32)
-                .transition(.opacity)
-        }
     }
 }
 

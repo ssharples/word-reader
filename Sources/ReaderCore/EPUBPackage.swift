@@ -27,6 +27,9 @@ public struct EPUBPackage: Sendable {
     public let url: URL
     public let title: String?
     public let authors: [String]
+    /// The package's unique identifier (`package@unique-identifier` → `dc:identifier`),
+    /// such as an ISBN or a UUID.
+    public let identifier: String?
     public let coverPath: String?
     public let isProtected: Bool
 
@@ -70,6 +73,9 @@ public struct EPUBPackage: Sendable {
         var buffer = ""
         var title: String?
         var authors: [String] = []
+        var uniqueID: String?
+        var identifiers: [(id: String?, value: String)] = []
+        var fieldID: String?
         var coverID: String?
         var tocID: String?
         var manifest: [String: ManifestItem] = [:]
@@ -87,16 +93,20 @@ public struct EPUBPackage: Sendable {
                     if !value.isEmpty {
                         if tag.name == "title", title == nil { title = value }
                         if tag.name == "creator" { authors.append(value) }
+                        if tag.name == "identifier" { identifiers.append((fieldID, value)) }
                     }
                     field = nil
                 }
             case .tag(let tag):
                 switch tag.name {
+                case "package":
+                    uniqueID = tag.attributes["unique-identifier"]
                 case "metadata":
                     inMetadata = true
-                case "title", "creator":
+                case "title", "creator", "identifier":
                     if inMetadata, !tag.isSelfClosing {
                         field = tag.name
+                        fieldID = tag.attributes["id"]
                         buffer = ""
                     }
                 case "meta":
@@ -151,6 +161,7 @@ public struct EPUBPackage: Sendable {
             url: url,
             title: title,
             authors: Array(authors.prefix(3)),
+            identifier: (identifiers.first { $0.id != nil && $0.id == uniqueID } ?? identifiers.first)?.value,
             coverPath: coverPath,
             isProtected: detectProtection(storage),
             storage: storage,

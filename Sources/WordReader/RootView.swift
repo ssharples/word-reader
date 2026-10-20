@@ -1,3 +1,4 @@
+import ReaderKit
 import SwiftUI
 
 /// Shows the library, or the reader when a book is open.
@@ -15,10 +16,7 @@ struct RootView: View {
         }
         .frame(minWidth: 760, minHeight: 520)
         .task {
-            // A book named on the command line opens without waiting for the library scan.
-            async let library: Void = app.loadLibrary()
-            await app.handleLaunchArguments()
-            await library
+            await app.start()
         }
         .alert(app.alert?.title ?? "", isPresented: alertShown, presenting: app.alert) { _ in
             Button("OK") {}
