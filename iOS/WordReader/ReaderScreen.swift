@@ -405,7 +405,7 @@ struct FinishedCard: View {
                 Button("Read Again") { session.move(to: session.text.startIndex) }
                     .buttonStyle(.bordered)
                 Button("Library", action: close)
-                    .buttonStyle(.borderedProminent)
+                    .prominentButton()
             }
             .padding(.top, 8)
         }

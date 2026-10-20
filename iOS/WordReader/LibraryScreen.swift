@@ -53,6 +53,9 @@ struct LibraryScreen: View {
                         }
                     }
                 }
+                // Full width even with no books, or the scroll view shrinks and
+                // squeezes the empty-library message into a thin column.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 .padding(.bottom, 32)
@@ -148,7 +151,7 @@ struct LibraryScreen: View {
                 Text("Add EPUB books from Files, or sync with Word Reader on your Mac to read the same books on both.")
             } actions: {
                 Button("Add Books") { importing = true }
-                    .buttonStyle(.borderedProminent)
+                    .prominentButton()
                 if !model.isSyncing {
                     Button("Sync with Mac") { choosingFolder = true }
                 }
@@ -247,7 +250,7 @@ struct SyncCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Choose Sync Folder", action: choose)
-                    .buttonStyle(.borderedProminent)
+                    .prominentButton()
                     .padding(.top, 6)
             }
             Spacer(minLength: 0)
@@ -266,5 +269,13 @@ struct SyncCard: View {
             .padding(6)
             .accessibilityLabel("Not now")
         }
+    }
+}
+
+extension View {
+    /// A filled button. iOS draws it paler in dark mode, so its text takes the paper
+    /// colour: light on the red in light mode, dark on the pale red in dark mode.
+    func prominentButton() -> some View {
+        buttonStyle(.borderedProminent).foregroundStyle(Theme.paper)
     }
 }
