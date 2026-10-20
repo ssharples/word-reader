@@ -15,6 +15,7 @@ struct ReaderScreen: View {
     @AppStorage(Prefs.fontSize) private var fontSize = Prefs.defaultFontSize
     @AppStorage(Prefs.fontStyle) private var fontStyle = ReaderFont.serif.rawValue
     @AppStorage(Prefs.showFocusLetter) private var showFocusLetter = true
+    @AppStorage(Prefs.readAloud) private var readAloud = false
     @AppStorage("readerHintsShown") private var hintsShown = 0
 
     @State private var showSettings = false
@@ -65,6 +66,12 @@ struct ReaderScreen: View {
             SettingsScreen(inReader: true)
                 .presentationDetents([.medium, .large])
         }
+        .alert("Can't read aloud", isPresented: voiceProblemShown) {
+            Button("Open Settings") { showSettings = true }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(session.voiceProblem ?? "")
+        }
         .onChange(of: session.isPlaying) { _, playing in
             // Keep the screen on while words are moving.
             UIApplication.shared.isIdleTimerDisabled = playing
@@ -74,6 +81,10 @@ struct ReaderScreen: View {
             UIApplication.shared.isIdleTimerDisabled = false
             session.pause()
         }
+    }
+
+    private var voiceProblemShown: Binding<Bool> {
+        Binding(get: { session.voiceProblem != nil }, set: { if !$0 { session.voiceProblem = nil } })
     }
 
     private var topBar: some View {
@@ -100,6 +111,20 @@ struct ReaderScreen: View {
             }
             .frame(maxWidth: .infinity)
             Button {
+                let on = !readAloud
+                session.setReadAloud(on)
+                // The first time, the key has to go in before the voice can start.
+                if on, ReadAloud.apiKey == nil { showSettings = true }
+            } label: {
+                Image(systemName: readAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(readAloud ? Theme.focus : .secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Read aloud")
+            .accessibilityValue(readAloud ? "On" : "Off")
+            Button {
                 showSettings = true
             } label: {
                 Image(systemName: "textformat.size")
@@ -121,12 +146,22 @@ struct ReaderScreen: View {
             PausedContext(session: session, font: font)
                 .frame(height: compactHeight ? 64 : 150, alignment: .top)
                 .padding(.top, compactHeight ? 10 : 24)
-            Text(hintsShown < 3 ? "Tap to play or pause · Drag sideways to move" : "")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
-                .opacity(showControls && scrub == nil ? 1 : 0)
-                .frame(height: 20)
-                .padding(.top, 8)
+            Group {
+                if session.narrator?.isLoading == true {
+                    Label {
+                        Text("Getting the voice ready…")
+                    } icon: {
+                        ProgressView().controlSize(.mini)
+                    }
+                } else {
+                    Text(hintsShown < 3 ? "Tap to play or pause · Drag sideways to move" : "")
+                        .opacity(showControls && scrub == nil ? 1 : 0)
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(.tertiary)
+            .frame(height: 20)
+            .padding(.top, 8)
             Spacer(minLength: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

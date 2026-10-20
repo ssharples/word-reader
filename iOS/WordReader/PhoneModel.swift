@@ -1,3 +1,4 @@
+import AVFoundation
 import Observation
 import ReaderCore
 import ReaderKit
@@ -31,6 +32,7 @@ final class PhoneModel {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    @ObservationIgnored private var audioObservers: [NSObjectProtocol] = []
 
     static let bookTypes: [UTType] = [UTType("org.idpf.epub-container"), UTType(filenameExtension: "epub")].compactMap { $0 }
 
@@ -41,6 +43,8 @@ final class PhoneModel {
     func start() async {
         guard !started else { return }
         started = true
+        watchAudio()
+        Task.detached(priority: .background) { SpeechCache.standard.trim(toBytes: 1_000_000_000) }
         await reconnect()
         await loadLibrary()
         if isSyncing {
@@ -72,6 +76,25 @@ final class PhoneModel {
             await sync.pushIfPending()
             endBackgroundTask()
         }
+    }
+
+    /// Stops reading when a call comes in, or when headphones are unplugged while the
+    /// voice is speaking, so it doesn't carry on out loud.
+    private func watchAudio() {
+        let center = NotificationCenter.default
+        audioObservers = [
+            center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+                let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                guard type == AVAudioSession.InterruptionType.began.rawValue else { return }
+                MainActor.assumeIsolated { self?.session?.pause() }
+            },
+            center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
+                let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+                guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue,
+                      UserDefaults.standard.bool(forKey: Prefs.readAloud) else { return }
+                MainActor.assumeIsolated { self?.session?.pause() }
+            },
+        ]
     }
 
     private func endBackgroundTask() {

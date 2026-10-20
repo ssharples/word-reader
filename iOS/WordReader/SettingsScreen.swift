@@ -12,8 +12,15 @@ struct SettingsScreen: View {
     @AppStorage(Prefs.fontSize) private var fontSize = Prefs.defaultFontSize
     @AppStorage(Prefs.fontStyle) private var fontStyle = ReaderFont.serif.rawValue
     @AppStorage(Prefs.showFocusLetter) private var showFocusLetter = true
+    @AppStorage(Prefs.readAloud) private var readAloud = false
+    @AppStorage(Prefs.voiceID) private var voiceID = ReadAloud.defaultVoice
+    @AppStorage(Prefs.voiceModel) private var voiceModel = VoiceModel.flash.rawValue
     @State private var choosingFolder = false
     @State private var confirmStop = false
+    @State private var keySaved = Keychain.read() != nil
+    @State private var keyDraft = ""
+    @State private var voices = ReadAloud.premadeVoices
+    @State private var voiceNote: String?
 
     var body: some View {
         NavigationStack {
@@ -57,6 +64,8 @@ struct SettingsScreen: View {
                     Toggle("Colour the focus letter", isOn: $showFocusLetter)
                 }
 
+                voiceSection
+
                 if !inReader {
                     syncSection
                     Section {
@@ -87,7 +96,76 @@ struct SettingsScreen: View {
             } message: {
                 Text("Books in the sync folder stay there, but this iPhone won't show them or share your place in them until you choose the folder again.")
             }
+            .task(id: keySaved) { await loadVoices() }
         }
+    }
+
+    @ViewBuilder private var voiceSection: some View {
+        Section {
+            Toggle("Read aloud", isOn: $readAloud)
+            if keySaved {
+                LabeledContent("API key", value: "Saved on this iPhone")
+                Button("Remove Key", role: .destructive) {
+                    Keychain.delete()
+                    keySaved = false
+                }
+            } else if ReadAloud.apiKey != nil {
+                LabeledContent("API key", value: "From ELEVENLABS_API_KEY")
+            } else {
+                SecureField("API key", text: $keyDraft, prompt: Text("Paste your ElevenLabs API key"))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit(saveKey)
+                Button("Save Key", action: saveKey)
+                    .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            Picker("Voice", selection: $voiceID) {
+                ForEach(voices) { voice in
+                    Text(voice.name).tag(voice.voiceId)
+                }
+                if !voices.contains(where: { $0.voiceId == voiceID }) {
+                    Text("Voice \(voiceID)").tag(voiceID)
+                }
+            }
+            .pickerStyle(.navigationLink)
+            TextField("Voice ID", text: $voiceID, prompt: Text("Or paste a voice ID from your library"))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.footnote.monospaced())
+            Picker("Model", selection: $voiceModel) {
+                ForEach(VoiceModel.allCases) { model in
+                    Text(model.label).tag(model.rawValue)
+                }
+            }
+            .pickerStyle(.navigationLink)
+        } header: {
+            Text("Read Aloud")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if let voiceNote {
+                    Text(voiceNote)
+                }
+                Text("An [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) voice reads the book with each word on screen as it's spoken. Make a key under Developers › API Keys with Text to Speech access; give it Voices read access too and your own voices appear above. It uses your ElevenLabs credits. Each passage is saved on this iPhone, so hearing it again costs nothing.")
+            }
+        }
+    }
+
+    private func saveKey() {
+        let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        Keychain.save(key)
+        keyDraft = ""
+        keySaved = Keychain.read() != nil
+    }
+
+    /// Adds the account's own voices to the list, when the key is allowed to read them.
+    private func loadVoices() async {
+        guard ReadAloud.apiKey != nil else {
+            (voices, voiceNote) = (ReadAloud.premadeVoices, nil)
+            return
+        }
+        (voices, voiceNote) = await ReadAloud.voices()
     }
 
     @ViewBuilder private var syncSection: some View {
