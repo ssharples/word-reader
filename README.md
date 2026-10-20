@@ -17,7 +17,11 @@ place and the book comes to you.
   or chapter.
 - It remembers where you are in every book, and opens new books at the first page of
   the text rather than the cover.
-- It works offline. Your books stay on your Mac and nothing is sent anywhere.
+- Turn on **Read Aloud** and an [ElevenLabs](https://elevenlabs.io) voice reads the
+  book to you, with each word on screen as it's spoken. You need your own ElevenLabs
+  account.
+- Without Read Aloud it works offline. Your books stay on your Mac and nothing is
+  sent anywhere.
 
 Books bought from the Apple Books Store have copy protection, so Word Reader can't
 open them. Books you added yourself, and DRM-free EPUBs from anywhere, work.
@@ -77,7 +81,13 @@ nothing else on the person's Mac.
 rm -rf ~/Applications/Word\ Reader.app && defaults delete com.ssharples.WordReader
 ```
 
-The second command forgets your place in each book and your settings.
+The second command forgets your place in each book and your settings. If you used
+Read Aloud, these delete the saved speech and your ElevenLabs key:
+
+```bash
+rm -rf ~/Library/Caches/com.ssharples.WordReader
+security delete-generic-password -s "Word Reader ElevenLabs"
+```
 
 ## Reading
 
@@ -92,7 +102,33 @@ The second command forgets your place in each book and your settings.
 - **[ ]** jump to the previous or next chapter, or pick one from the chapter menu.
 - **⌘+ ⌘−** change the text size. The **Aa** button has the rest: font, the red focus
   letter, and pauses at punctuation.
+- **V** turns Read Aloud on or off.
 - **Esc** pauses, then goes back to the library.
+
+## Read aloud
+
+1. Make an API key in your ElevenLabs account under
+   [Developers → API Keys](https://elevenlabs.io/app/settings/api-keys). It needs
+   Text to Speech access. Give it Voices read access too if you want your own voices
+   in the list.
+2. Open **Word Reader → Settings…** (⌘,), paste the key and click **Save**. The app
+   keeps it in your keychain. It also reads `ELEVENLABS_API_KEY` if you start the app
+   from Terminal.
+3. Pick a voice and model, open a book, press **V** (or the speaker button), then
+   **Space**.
+
+The voice follows your speed setting. It can go from half to twice its natural
+pace: for George, the default voice, about 85 to 330 words a minute. Outside that range
+the voice stops at its limit and the words keep in step with it.
+
+Each passage is sent to ElevenLabs once and saved on your Mac, so pausing, stepping
+back or reading a page again costs nothing. The app keeps up to 1 GB of speech and
+deletes the oldest first.
+
+Read Aloud uses your ElevenLabs credits. In testing, the Flash model (the default)
+used about one credit for every four or five letters, so a 100,000-word novel would
+take roughly 130,000 credits. Multilingual v2 sounds richer and costs more. Check
+your plan's prices before you listen to a whole book.
 
 ## Build from source
 
@@ -120,13 +156,19 @@ chapter's HTML becomes a list of words. Pages the book marks as outside the main
 reading order, such as pop-up notes, are left out, as are footnote markers and page
 numbers.
 
-| Folder                  | What's in it                                |
-| ----------------------- | ------------------------------------------- |
-| `Sources/ReaderCore`    | EPUB reading, word splitting and timing     |
-| `Sources/WordReader`    | The SwiftUI app                             |
-| `Sources/epub-check`    | A command-line check that opens every book  |
-| `Tests/ReaderCoreTests` | Tests for the above                         |
-| `Scripts`               | Install and build scripts, icon drawing     |
+| Folder                  | What's in it                                 |
+| ----------------------- | -------------------------------------------- |
+| `Sources/ReaderCore`    | EPUB reading, word splitting, timing, speech |
+| `Sources/WordReader`    | The SwiftUI app                              |
+| `Sources/epub-check`    | A command-line check that opens every book   |
+| `Tests/ReaderCoreTests` | Tests for the above                          |
+| `Scripts`               | Install and build scripts, icon drawing      |
+
+Read Aloud sends a few sentences at a time to ElevenLabs' `with-timestamps`
+endpoint, which returns the audio and the moment each letter is spoken. The app
+turns those into the moment each word starts, plays the audio, and every 15 ms shows
+the word the voice has reached. It fetches the next passage while the current one
+plays, so there's no gap between them.
 
 ## Checks
 

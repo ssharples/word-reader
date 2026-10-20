@@ -18,6 +18,10 @@ final class ReaderSession {
     private(set) var chapterIndex: Int?
     private(set) var isPlaying = false
     private(set) var reachedEnd = false
+    /// The voice that reads the book aloud, made the first time it plays with Read Aloud on.
+    private(set) var narrator: Narrator?
+    /// Why reading aloud stopped, shown once.
+    var voiceProblem: String?
 
     @ObservationIgnored private let progress: ProgressStore
     @ObservationIgnored private var playback: Task<Void, Never>?
@@ -46,7 +50,11 @@ final class ReaderSession {
         if index >= text.count - 1 { index = text.startIndex }
         reachedEnd = false
         isPlaying = true
-        playback = Task { [weak self] in await self?.run() }
+        if UserDefaults.standard.bool(forKey: Prefs.readAloud) {
+            readingNarrator().start(at: index)
+        } else {
+            playback = Task { [weak self] in await self?.run() }
+        }
     }
 
     func pause() {
@@ -54,7 +62,30 @@ final class ReaderSession {
         isPlaying = false
         playback?.cancel()
         playback = nil
+        narrator?.stop()
         save()
+    }
+
+    /// Kept for the whole book, so pausing and playing again reuses the audio it has.
+    private func readingNarrator() -> Narrator {
+        if let narrator { return narrator }
+        let narrator = Narrator(text: text)
+        narrator.onWord = { [weak self] in self?.advance(to: $0) }
+        narrator.onFinish = { [weak self] in self?.finish() }
+        narrator.onFailure = { [weak self] error in
+            self?.pause()
+            self?.voiceProblem = error.localizedDescription
+        }
+        self.narrator = narrator
+        return narrator
+    }
+
+    /// Turns Read Aloud on or off, carrying on from the same word if playing.
+    func setReadAloud(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Prefs.readAloud)
+        guard isPlaying else { return }
+        pause()
+        play()
     }
 
     private func run() async {
@@ -85,16 +116,25 @@ final class ReaderSession {
             }
             guard isPlaying, !Task.isCancelled else { return }
             if index + 1 >= text.count {
-                isPlaying = false
-                reachedEnd = true
-                playback = nil
-                save()
+                finish()
                 return
             }
-            index += 1
-            wordsSinceSave += 1
-            if wordsSinceSave >= 25 { save() }
+            advance(to: index + 1)
         }
+    }
+
+    private func advance(to newIndex: Int) {
+        guard newIndex != index else { return }
+        index = newIndex
+        wordsSinceSave += 1
+        if wordsSinceSave >= 25 { save() }
+    }
+
+    private func finish() {
+        isPlaying = false
+        reachedEnd = true
+        playback = nil
+        save()
     }
 
     // MARK: Moving around
@@ -102,6 +142,7 @@ final class ReaderSession {
     func move(to newIndex: Int) {
         index = min(max(newIndex, 0), text.count - 1)
         reachedEnd = false
+        if isPlaying { narrator?.seek(to: index) }
         save()
     }
 

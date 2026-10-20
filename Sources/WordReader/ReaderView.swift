@@ -8,6 +8,7 @@ import SwiftUI
 /// of the screen doesn't redraw on every word.
 struct ReaderView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openSettings) private var openSettings
     let session: ReaderSession
 
     @AppStorage(Prefs.fontSize) private var fontSize = 72.0
@@ -66,6 +67,17 @@ struct ReaderView: View {
             // You can't read words you aren't looking at.
             session.pause()
         }
+        .alert("Can't read aloud", isPresented: voiceProblemShown) {
+            Button("Open Settings") { openSettings() }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(session.voiceProblem ?? "")
+        }
+    }
+
+    private var voiceProblemShown: Binding<Bool> {
+        @Bindable var session = session
+        return Binding(get: { session.voiceProblem != nil }, set: { if !$0 { session.voiceProblem = nil } })
     }
 
     // MARK: Fading controls
@@ -133,6 +145,7 @@ struct ReaderView: View {
             switch key.characters {
             case "[": session.previousChapter()
             case "]": session.nextChapter()
+            case "v", "V": session.setReadAloud(!UserDefaults.standard.bool(forKey: Prefs.readAloud))
             default: return false
             }
         }
@@ -241,6 +254,7 @@ struct ReaderControls: View {
     @Binding var hovering: Bool
     @AppStorage(Prefs.wordsPerMinute) private var wordsPerMinute = 300
     @AppStorage(Prefs.naturalPauses) private var naturalPauses = true
+    @AppStorage(Prefs.readAloud) private var readAloud = false
     @State private var showSettings = false
 
     var body: some View {
@@ -301,6 +315,22 @@ struct ReaderControls: View {
             Text("\(wordsPerMinute) wpm")
                 .font(.callout.monospacedDigit())
                 .frame(width: 70, alignment: .leading)
+            Button {
+                session.setReadAloud(!readAloud)
+            } label: {
+                Group {
+                    if session.narrator?.isLoading == true {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: readAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                            .foregroundStyle(readAloud ? Theme.focus : .secondary)
+                    }
+                }
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(readAloud ? "Stop reading aloud (V)" : "Read aloud with ElevenLabs (V)")
             Button {
                 showSettings.toggle()
             } label: {

@@ -12,6 +12,7 @@ struct ReaderSettings: View {
         ("⌥← ⌥→", "One sentence back or forward"),
         ("↑ ↓", "Faster or slower"),
         ("[ ]", "Previous or next chapter"),
+        ("V", "Read aloud on or off"),
         ("⌘+ ⌘−", "Bigger or smaller text"),
         ("Esc", "Pause, then back to the library"),
     ]

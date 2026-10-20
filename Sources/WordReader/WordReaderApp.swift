@@ -1,4 +1,5 @@
 import AppKit
+import ReaderCore
 import SwiftUI
 
 @main
@@ -18,6 +19,10 @@ struct WordReaderApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             BookCommands(app: delegate.model)
+        }
+
+        Settings {
+            VoiceSettings()
         }
     }
 }
@@ -45,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Bundle.main.bundleIdentifier == nil {
             NSApp.setActivationPolicy(.regular)
         }
+        Task.detached(priority: .background) {
+            SpeechCache.standard.trim(toBytes: 1_000_000_000)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -66,6 +74,11 @@ enum Prefs {
     static let showFocusLetter = "showFocusLetter"
     static let fontSize = "fontSize"
     static let fontStyle = "fontStyle"
+    static let readAloud = "readAloud"
+    static let voiceID = "voiceID"
+    static let voiceModel = "voiceModel"
+    /// Only set from the command line, to check reading aloud without sound.
+    static let voiceVolume = "voiceVolume"
 
     static let speedRange = 100...1000
     static let speedStep = 25
@@ -78,6 +91,9 @@ enum Prefs {
             showFocusLetter: true,
             fontSize: 72.0,
             fontStyle: ReaderFont.serif.rawValue,
+            readAloud: false,
+            voiceID: VoiceSettings.defaultVoice,
+            voiceModel: VoiceModel.flash.rawValue,
         ])
     }
 }
